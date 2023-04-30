@@ -7,9 +7,12 @@ import pathlib
 from typing import Any, Dict, List
 
 import aiohttp
-import asyncpg
+# import asyncpg
 import discord
 from discord.ext import commands
+
+from utils.context import RustByteContext
+
 
 class RustByteBot(commands.Bot):
     INITAL_EXTENSIONS: List[str] = []
@@ -24,26 +27,31 @@ class RustByteBot(commands.Bot):
             **kwargs,
         )
         self.blacklisted_users: Dict[int, str] = {}
-        self.cooldown: commands.CooldownMapping[discord.Message] = commands.CooldownMapping.from_cooldown(
-            1, 1.5, commands.BucketType.member
-        )
+        self.cooldown: commands.CooldownMapping[
+            discord.Message
+        ] = commands.CooldownMapping.from_cooldown(1, 1.5, commands.BucketType.member)
         self.maintenance: bool = False
         self.launch_time: datetime.datetime = datetime.datetime.utcnow()
-    
-    async def setup_hook(self) -> None:
-        database: asyncpg.Pool[Any] | Any = await asyncpg.create_pool(
-            host=os.environ["db_ip"],
-            port=int(os.environ["db_port"]),
-            user=os.environ["db_user"],
-            password=os.environ["db_pwd"],
-            database=os.environ["database"],
-        )
 
-        if not database:
-            raise RuntimeError("Database is unreachable")
-        else:
-            self.database = database
-        
+    async def get_context(
+        self, message: discord.Message, *, cls: Any = RustByteContext
+    ) -> Any:
+        return await super().get_context(message, cls=cls)
+
+    async def setup_hook(self) -> None:
+        # database: asyncpg.Pool[Any] | Any = await asyncpg.create_pool(
+        #    host=os.environ["db_ip"],
+        #    port=int(os.environ["db_port"]),
+        #    user=os.environ["db_user"],
+        #    password=os.environ["db_pwd"],
+        #    database=os.environ["database"],
+        # )
+        #
+        # if not database:
+        #    raise RuntimeError("Database is unreachable")
+        # else:
+        #    self.database = database
+
         await self.load_extension("jishaku")
         for file in pathlib.Path("cogs").glob("**/*.py"):
             *tree, _ = file.parts
@@ -51,8 +59,8 @@ class RustByteBot(commands.Bot):
                 continue
 
             try:
-                await self.load_extension(f"{".".join(tree)}.{file.stem}")
-                self.INITAL_EXTENSIONS.append(f"{".".join(tree)}.{file.stem}")
+                await self.load_extension(f"{'.'.join(tree)}.{file.stem}")
+                self.INITAL_EXTENSIONS.append(f"{'.'.join(tree)}.{file.stem}")
             except Exception as error:
                 self.logger.error(error, exc_info=error)
 
@@ -60,13 +68,15 @@ class RustByteBot(commands.Bot):
             log_webhook: str | None = os.environ["log_webhook"]
         except KeyError:
             raise RuntimeError("Logging Webhook isn't set in .env")
+        else:
+            self.log_webhook = log_webhook
 
     async def close(self) -> None:
-        if self.session:
+        if hasattr(self, "session"):
             await self.session.close()
 
-        if self.db:
-            await self.db.close()
+        # if self.database:
+        #    await self.database.close()
 
         await super().close()
 
@@ -77,7 +87,9 @@ class RustByteBot(commands.Bot):
         await super().start(token)
 
     def get_log_webhook(self) -> discord.Webhook:
-        return discord.Webhook.from_url(self.log_webhook, session=self.session, bot_token=os.getenv("token"))
+        return discord.Webhook.from_url(
+            self.log_webhook, session=self.session, bot_token=os.getenv("token")
+        )
 
     def is_blacklisted(self, user_id: int) -> bool:
         return user_id in self.blacklisted_users
